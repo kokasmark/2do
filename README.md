@@ -15,7 +15,7 @@ Notes easily at your hand whenever you want it, wherever you want it.
 ![add](./images/list-all-video.gif)
 
 ### ...or just for the opened file
-![add](./images/list-all-video.gif)
+![add](./images/list-file-video.gif)
 
 
 ---

@@ -132,7 +132,6 @@ function highlightNote(editor, note) {
   const line = note.line;
   const range = editor.document.lineAt(line).range;
   const iconPath = vscode.Uri.file(path.join(__dirname, "assets", `${note.type}.png`));
-  console.log(iconPath);
   activeHighlight = vscode.window.createTextEditorDecorationType({
     backgroundColor: "transparent",
     isWholeLine: true,
