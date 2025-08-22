@@ -34,4 +34,4 @@ Notes easily at your hand whenever you want it, wherever you want it.
 
 ### 1.0.0
 
-Initial release of 2DO
+Initial release of 2do
