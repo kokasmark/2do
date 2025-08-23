@@ -31,11 +31,14 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var extension_exports = {};
 __export(extension_exports, {
   activate: () => activate,
-  deactivate: () => deactivate
+  deactivate: () => deactivate,
+  loadNotes: () => loadNotes,
+  saveNotes: () => saveNotes
 });
 module.exports = __toCommonJS(extension_exports);
 var vscode = __toESM(require("vscode"));
 var path = __toESM(require("path"));
+var fs = __toESM(require("fs"));
 
 // src/types.ts
 var NoteIcons = {
@@ -94,8 +97,10 @@ function timeAgo(timestamp) {
 }
 
 // src/extension.ts
+var import_child_process = require("child_process");
 var notes = {};
 var activeHighlight = null;
+var author = getGitUserName();
 function getNotes(context) {
   let listItems = [];
   const editor = vscode.window.activeTextEditor;
@@ -111,6 +116,7 @@ function getNotes(context) {
       notes[editor.document.fileName].forEach((n) => {
         listItems.push({ label: `$(${NoteIcons[n.type]})`, description: `${n.message.length > 50 ? `${n.message.slice(0, 50)}...` : n.message} - ${timeAgo(n.timestamp)}`, note: n });
       });
+      if (listItems.length === 0) vscode.window.showInformationMessage(`${editor.document.fileName} doesn't have any notes!`);
     } else {
       vscode.window.showInformationMessage(`${editor.document.fileName} doesn't have any notes!`);
     }
@@ -146,7 +152,7 @@ function highlightNote(editor, note) {
     range,
     renderOptions: {
       after: {
-        contentText: ` ${note.message}`,
+        contentText: note.author ? ` ${note.message} - ${note.author}` : ` ${note.message}`,
         color: NoteColors[note.type],
         fontStyle: "italic"
       }
@@ -155,7 +161,125 @@ function highlightNote(editor, note) {
   editor.setDecorations(activeHighlight, [decoration]);
   editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
 }
+function getNotesFilePath() {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) return null;
+  return path.join(folders[0].uri.fsPath, ".2do");
+}
+function loadNotes() {
+  const notesFile = getNotesFilePath();
+  if (!notesFile || !fs.existsSync(notesFile)) return {};
+  try {
+    const raw = fs.readFileSync(notesFile, "utf8");
+    return JSON.parse(raw);
+  } catch (err) {
+    vscode.window.showErrorMessage("Failed to read notes file: " + err);
+    return {};
+  }
+}
+function saveNotes() {
+  const notesFile = getNotesFilePath();
+  if (!notesFile) {
+    vscode.window.showErrorMessage("No workspace open \u2014 cannot save notes.");
+    return;
+  }
+  try {
+    fs.writeFileSync(notesFile, JSON.stringify(notes, null, 2), "utf8");
+  } catch (err) {
+    vscode.window.showErrorMessage("Failed to save notes: " + err);
+  }
+}
+function getGitUserName() {
+  try {
+    const name = (0, import_child_process.execSync)("git config user.name", { encoding: "utf8" }).trim();
+    return name || null;
+  } catch (err) {
+    return null;
+  }
+}
+async function listNotes(context) {
+  const notes2 = getNotes(context);
+  const items = [
+    { label: "$(filter-filled)", description: "Filter Notes", note: null },
+    { label: "$(list-ordered)", description: "Order Notes", note: null },
+    ...notes2
+  ];
+  const picked = await vscode.window.showQuickPick(
+    items,
+    { placeHolder: "Select Note" }
+  );
+  if (picked) {
+    if (picked.note) {
+      return picked;
+    } else {
+      const index = items.indexOf(picked);
+      if (index === 0) {
+        const picked2 = await listFilters(context);
+        if (picked2) {
+          return picked2;
+        }
+      }
+      if (index === 1) {
+        const picked2 = await listOrderings(context);
+        if (picked2) {
+          return picked2;
+        }
+      }
+      return null;
+    }
+  }
+  return null;
+}
+async function listFilters(context) {
+  const items = [
+    { label: "$(clear-all)", description: "Clear Filter", filter: null },
+    ...Object.entries(NoteIcons).map(([type, icon]) => ({
+      label: `$(${icon})`,
+      description: `Filter ${type.charAt(0).toUpperCase()}${type.slice(1)}`,
+      filter: type
+    }))
+  ];
+  const pickedFilter = await vscode.window.showQuickPick(
+    items,
+    { placeHolder: "Select Filter" }
+  );
+  if (pickedFilter) {
+  }
+  const picked = await listNotes(context);
+  if (picked) {
+    if (picked.note) {
+      return picked;
+    } else {
+      return null;
+    }
+  }
+  return null;
+}
+async function listOrderings(context) {
+  const items = [
+    { label: "$(clear-all)", description: "By None", order: null },
+    { label: "$(account)", description: "By Author", order: null },
+    { label: "$(fold-up)", description: "By Latest", order: null },
+    { label: "$(fold-down)", description: "By Oldest", order: null }
+  ];
+  const pickedOrder = await vscode.window.showQuickPick(
+    items,
+    { placeHolder: "Select Order" }
+  );
+  if (pickedOrder) {
+  }
+  const picked = await listNotes(context);
+  if (picked) {
+    if (picked.note) {
+      return picked;
+    } else {
+      return null;
+    }
+  }
+  return null;
+}
 function activate(context) {
+  notes = loadNotes();
   context.subscriptions.push(
     vscode.commands.registerCommand("2do.add", async () => {
       const pickedTypeIcon = await vscode.window.showQuickPick(
@@ -181,8 +305,10 @@ function activate(context) {
           timestamp: Date.now(),
           line: selection.start.line,
           type,
-          message: text
+          message: text,
+          author
         });
+        saveNotes();
         editor.edit((editBuilder) => {
           editBuilder.delete(selection);
         });
@@ -206,10 +332,7 @@ function activate(context) {
     vscode.commands.registerCommand("2do.list", async () => {
       const notes2 = getNotes(context);
       if (!notes2 || notes2.length === 0) return;
-      const picked = await vscode.window.showQuickPick(
-        notes2,
-        { placeHolder: "Select Note" }
-      );
+      const picked = await listNotes(context);
       if (picked) {
         const uri = vscode.Uri.file(picked.note.path);
         vscode.workspace.openTextDocument(uri).then((doc) => {
@@ -228,11 +351,12 @@ function activate(context) {
     vscode.commands.registerCommand("2do.delete", async () => {
       const notesList = getNotes(context);
       if (!notesList || notesList.length === 0) return;
-      const picked = await vscode.window.showQuickPick(notesList, { placeHolder: "Select Note to be Deleted" });
+      const picked = await listNotes(context);
       if (picked) {
         const index = notes[picked.note.path].indexOf(picked.note);
         if (index !== -1) {
           notes[picked.note.path].splice(index, 1);
+          saveNotes();
         }
       }
       clearHighlight();
@@ -250,6 +374,8 @@ function deactivate() {
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   activate,
-  deactivate
+  deactivate,
+  loadNotes,
+  saveNotes
 });
 //# sourceMappingURL=extension.js.map

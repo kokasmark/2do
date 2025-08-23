@@ -26,12 +26,13 @@ export interface Note{
     timestamp: number,
     type: NoteType,
     message: string,
+    author: string | null
 }
 
 export interface ListItem{
     label: string,
     description: string, 
-    note: Note 
+    note: Note
 }
 
 export  const iconItems: { label: string; description: string; type: NoteType }[] = [
